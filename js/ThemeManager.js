@@ -17,7 +17,7 @@ export class ThemeManager {
 
     update(imgUrl) {
         if (!imgUrl || imgUrl.endsWith('/')) {
-            console.warn("背景路径为空，跳过取色，使用默认颜色");
+            console.warn("[ThemeManager] 背景路径为空，跳过取色，使用默认颜色");
             this.color = { ...Config.DEFAULT_COLOR };
             return;
         }
@@ -29,28 +29,43 @@ export class ThemeManager {
             try {
                 const tempCanvas = document.createElement('canvas');
                 const tCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
-                tempCanvas.width = 1; 
-                tempCanvas.height = 1;
                 
-                // 开启平滑抗锯齿，强制让浏览器进行像素混合
-                tCtx.imageSmoothingEnabled = true;
-                tCtx.imageSmoothingQuality = 'high';
-
-                const cropW = img.width * 0.5;
-                const cropH = img.height * 0.5;
-                const startX = img.width * 0.25;
-                const startY = img.height * 0.25;
+                // 与 kps 插件保持一致：降低分辨率提取以优化性能
+                tempCanvas.width = 50; 
+                tempCanvas.height = 50;
+                tCtx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
                 
-                tCtx.drawImage(img, startX, startY, cropW, cropH, 0, 0, 1, 1);
-                const [r, g, b] = tCtx.getImageData(0, 0, 1, 1).data;
+                const imgData = tCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height).data;
+                let rSum = 0, gSum = 0, bSum = 0, count = 0;
                 
-                const offset = Config.COLOR_OFFSET;
-                this.color = { 
-                    r: Math.min(r + offset, 255), 
-                    g: Math.min(g + offset, 255), 
-                    b: Math.min(b + offset, 255) 
-                };
-                console.log(`[ThemeManager] 背景取色成功: rgb(${this.color.r}, ${this.color.g}, ${this.color.b})`);
+                // 步长为4 (R, G, B, A)
+                for (let i = 0; i < imgData.length; i += 4) {
+                    // 与 kps 插件保持一致：简单过滤掉过于偏黑或偏白的像素，避免主题色发灰
+                    if ((imgData[i] < 30 && imgData[i+1] < 30 && imgData[i+2] < 30) || 
+                        (imgData[i] > 230 && imgData[i+1] > 230 && imgData[i+2] > 230)) {
+                        continue;
+                    }
+                    rSum += imgData[i];
+                    gSum += imgData[i+1];
+                    bSum += imgData[i+2];
+                    count++;
+                }
+                
+                if (count > 0) {
+                    const rAvg = Math.floor(rSum / count);
+                    const gAvg = Math.floor(gSum / count);
+                    const bAvg = Math.floor(bSum / count);
+                    
+                    const offset = Config.COLOR_OFFSET || 0;
+                    this.color = { 
+                        r: Math.min(rAvg + offset, 255), 
+                        g: Math.min(gAvg + offset, 255), 
+                        b: Math.min(bAvg + offset, 255) 
+                    };
+                    console.log(`[ThemeManager] 背景取色成功: rgb(${this.color.r}, ${this.color.g}, ${this.color.b})`);
+                } else {
+                    this.color = { ...Config.DEFAULT_COLOR };
+                }
             } catch (e) {
                 console.error("[ThemeManager] 取色处理发生异常:", e);
                 this.color = { ...Config.DEFAULT_COLOR };

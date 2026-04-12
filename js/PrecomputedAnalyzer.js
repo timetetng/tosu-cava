@@ -3,82 +3,49 @@ import { Config } from './config.js';
 export class PrecomputedAnalyzer {
     constructor() {
         this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        this.globalSpectrum = []; 
-        this.fps = 60; 
-        this.isProcessing = false;
+        this.isReady = false;
         this.currentUrl = "";
+        
+        this.channelData = null;
+        this.sampleRate = 44100;
+
+        // 预分配内存，避免每秒 60 帧创建数组导致垃圾回收 (GC) 卡顿
+        this.windowSize = Config.FFT_SIZE || 4096;
+        this.re = new Float32Array(this.windowSize);
+        this.im = new Float32Array(this.windowSize);
+        this.magnitudes = new Float32Array(this.windowSize / 2);
     }
 
     async loadAndAnalyze(url) {
         if (this.currentUrl === url) return;
         this.currentUrl = url;
-        this.isProcessing = true;
-        this.globalSpectrum = []; 
+        this.isReady = false;
+        this.channelData = null;
 
         try {
-            console.log("开始预加载音频并离线分析...");
+            console.log("[Analyzer] 开始获取并解码音频...");
             
             const response = await fetch(url);
             const arrayBuffer = await response.arrayBuffer();
 
+            // decodeAudioData 会在浏览器的底层 C++ 线程中飞速解码，完全不卡 JS 主线程
             const audioBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
-            const channelData = audioBuffer.getChannelData(0); 
-            const sampleRate = audioBuffer.sampleRate;
-            const duration = audioBuffer.duration;
 
-            const frameCount = Math.ceil(duration * this.fps);
-            const windowSize = 2048; 
-            const tempSpectrum = new Array(frameCount);
-            
-            const minFreq = Config.MIN_FREQ || 40;
-            const maxFreq = Math.min(Config.MAX_FREQ || 12000, sampleRate / 2);
-            const numBars = Config.NUM_BARS;
-
-            for (let f = 0; f < frameCount; f++) {
-                const startIndex = Math.floor((f / this.fps) * sampleRate);
-                const re = new Float32Array(windowSize);
-                const im = new Float32Array(windowSize);
-
-                for (let i = 0; i < windowSize; i++) {
-                    let val = channelData[startIndex + i] || 0;
-                    let multiplier = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (windowSize - 1)));
-                    re[i] = val * multiplier;
-                }
-
-                this.fft(re, im);
-
-                const half = windowSize / 2;
-                const magnitudes = new Float32Array(half);
-                for (let i = 0; i < half; i++) {
-                    let mag = Math.sqrt(re[i] * re[i] + im[i] * im[i]) * (2 / windowSize);
-                    
-                    // --- 核心修复 1: 频响均衡 (EQ Pre-emphasis) ---
-                    // 模拟人耳听觉特性，按照频率的指数级逐渐放大高频振幅
-                    // 这样就能把隐藏在微小物理能量中的高频节奏给“拔”出来
-                    let currentFreq = i * (sampleRate / windowSize);
-                    let eqWeight = Math.max(1, Math.pow(currentFreq / 100, 0.45)); 
-                    mag = mag * eqWeight;
-                    // ---------------------------------------------
-                    
-                    let db = 20 * Math.log10(mag + 1e-6); 
-                    
-                    let mapped = ((db - (-85)) / ((-10) - (-85))) * 255;
-                    magnitudes[i] = Math.max(0, Math.min(255, mapped));
-                }
-
-                tempSpectrum[f] = this.mapToLogBands(magnitudes, sampleRate, windowSize, minFreq, maxFreq, numBars);
+            // 如果解码期间没有切歌，则装载数据
+            if (this.currentUrl === url) {
+                this.channelData = audioBuffer.getChannelData(0);
+                this.sampleRate = audioBuffer.sampleRate;
+                this.isReady = true;
+                
+                console.log("[Analyzer] 音频就绪！彻底告别预计算，开启即时渲染！");
             }
-
-            this.globalSpectrum = tempSpectrum;
-            this.isProcessing = false;
-            console.log(`全量预分析完成！共生成 ${frameCount} 帧数据。`);
-
         } catch (err) {
-            console.error("音频预计算失败:", err);
-            this.isProcessing = false;
+            console.error("[Analyzer] 音频加载/解码失败:", err);
+            this.isReady = false;
         }
     }
 
+    // 在位 (in-place) 快速傅里叶变换，速度极快
     fft(re, im) {
         const N = re.length;
         let j = 0;
@@ -137,24 +104,67 @@ export class PrecomputedAnalyzer {
             let count = 0;
             for (let j = startIndex; j < endIndex && j < magnitudes.length; j++) {
                 sum += magnitudes[j];
-                // 记录该频段内的最大峰值
                 if (magnitudes[j] > maxMag) maxMag = magnitudes[j];
                 count++;
             }
             
-            // 越靠右的柱子，包含的频率跨度越大（对数特性）。如果纯算平均值，高频的一声脆响会被周围静音的频带稀释掉。
-            // 这里采用 70%峰值 + 30%平均值 的混合算法，确保高频细节能冲破重围显示出来
+            // 混合算法：70% 峰值 + 30% 平均值，保证高频细节
             logBands[i] = count > 0 ? (sum / count) * 0.3 + maxMag * 0.7 : 0;
         }
         return logBands;
     }
 
+    // 每帧调用一次，实时抓取当前时间的波形进行单次 FFT 计算
     getFrame(time) {
-        if (this.isProcessing || this.globalSpectrum.length === 0) {
-            return new Array(Config.NUM_BARS).fill(0);
+        const numBars = Config.NUM_BARS || 30;
+        
+        if (!this.isReady || !this.channelData) {
+            return new Array(numBars).fill(0);
         }
-        const frameIndex = Math.floor(time * this.fps);
-        const safeIndex = Math.max(0, Math.min(frameIndex, this.globalSpectrum.length - 1));
-        return this.globalSpectrum[safeIndex];
+
+        // 检测配置是否动态修改了 FFT 大小
+        if (this.windowSize !== (Config.FFT_SIZE || 4096)) {
+            this.windowSize = Config.FFT_SIZE || 4096;
+            this.re = new Float32Array(this.windowSize);
+            this.im = new Float32Array(this.windowSize);
+            this.magnitudes = new Float32Array(this.windowSize / 2);
+        }
+
+        // 定位当前时间在 PCM 数组中的索引
+        const startIndex = Math.floor(time * this.sampleRate);
+        const dataLen = this.channelData.length;
+        
+        // 装载当前时间的波形数据，并套用汉宁窗 (Hanning Window) 以平滑边缘
+        for (let i = 0; i < this.windowSize; i++) {
+            let sampleIndex = startIndex + i;
+            let val = (sampleIndex >= 0 && sampleIndex < dataLen) ? this.channelData[sampleIndex] : 0;
+            
+            let multiplier = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (this.windowSize - 1)));
+            this.re[i] = val * multiplier;
+            this.im[i] = 0; 
+        }
+
+        // 仅对当前的这 4096 个点做一次极速 FFT
+        this.fft(this.re, this.im);
+
+        const half = this.windowSize / 2;
+        for (let i = 0; i < half; i++) {
+            let mag = Math.sqrt(this.re[i] * this.re[i] + this.im[i] * this.im[i]) * (2 / this.windowSize);
+            
+            // 频响均衡 (EQ Pre-emphasis)
+            let currentFreq = i * (this.sampleRate / this.windowSize);
+            let eqWeight = Math.max(1, Math.pow(currentFreq / 100, 0.45)); 
+            mag = mag * eqWeight;
+            
+            // 转换为分贝并映射到 0~255
+            let db = 20 * Math.log10(mag + 1e-6); 
+            let mapped = ((db - (-85)) / ((-10) - (-85))) * 255;
+            this.magnitudes[i] = Math.max(0, Math.min(255, mapped));
+        }
+
+        const minFreq = Config.MIN_FREQ || 40;
+        const maxFreq = Math.min(Config.MAX_FREQ || 12000, this.sampleRate / 2);
+        
+        return this.mapToLogBands(this.magnitudes, this.sampleRate, this.windowSize, minFreq, maxFreq, numBars);
     }
 }

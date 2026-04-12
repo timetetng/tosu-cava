@@ -29,7 +29,7 @@ class TosuApp {
         return path ? path.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/') : "";
     }
 
-connectSettings() {
+    connectSettings() {
         const rawPath = window.COUNTER_PATH || new URLSearchParams(window.location.search).get('l') || '';
         const counterPath = encodeURI(rawPath);
         
@@ -50,6 +50,8 @@ connectSettings() {
                     const settings = data.message;
                     console.log("收到最新设置:", settings);
                     
+                    let needReanalyze = false;
+
                     // 实时覆盖全局配置
                     if (settings.alignment) Config.ALIGNMENT = settings.alignment;
                     if (settings.opacity !== undefined) Config.OPACITY = settings.opacity;
@@ -57,25 +59,27 @@ connectSettings() {
                     if (settings.useFixedColor !== undefined) Config.USE_FIXED_COLOR = settings.useFixedColor;
                     if (settings.fixedColor) Config.FIXED_COLOR = settings.fixedColor;
                     
-                    if (settings.numBars) Config.NUM_BARS = settings.numBars;
-                    if (settings.sensitivity) Config.SENSITIVITY = settings.sensitivity;
-                    if (settings.exponent) Config.EXPONENT = settings.exponent;
-                    if (settings.gravity) Config.GRAVITY = settings.gravity;
-                    if (settings.noiseGate !== undefined) Config.NOISE_GATE = settings.noiseGate;
+                    // 检测影响预计算的参数是否改变
+                    if (settings.numBars && Config.NUM_BARS !== Number(settings.numBars)) {
+                        Config.NUM_BARS = Number(settings.numBars);
+                        needReanalyze = true;
+                    }
+                    
+                    if (settings.sensitivity) Config.SENSITIVITY = Number(settings.sensitivity);
+                    if (settings.exponent) Config.EXPONENT = Number(settings.exponent);
+                    if (settings.gravity) Config.GRAVITY = Number(settings.gravity);
+                    if (settings.noiseGate !== undefined) Config.NOISE_GATE = Number(settings.noiseGate);
 
                     // 如果当前处于显示状态，立即更新透明度
                     if (this.shouldDisplay && this.renderer) {
                         this.renderer.setOpacity(Config.OPACITY / 100);
                     }
 
-                    if (this.renderer && typeof this.renderer.updateOptions === 'function') {
-                        this.renderer.updateOptions({
-                            numBars: Config.NUM_BARS,
-                            sensitivity: Config.SENSITIVITY,
-                            exponent: Config.EXPONENT,
-                            gravity: Config.GRAVITY,
-                            noiseGate: Config.NOISE_GATE
-                        });
+                    // 核心修复：如果修改了柱条数量，必须强制重新预计算音频数据
+                    if (needReanalyze && this.currentAudioPath) {
+                        console.log("柱条数量发生改变，重新预计算音频...");
+                        this.analyzer.currentUrl = ""; // 清空当前 URL 标识以强制触发分析
+                        this.analyzer.loadAndAnalyze(this.currentAudioPath);
                     }
                 }
             } catch (err) {
@@ -85,6 +89,7 @@ connectSettings() {
 
         settingsSocket.onclose = () => setTimeout(() => this.connectSettings(), 2000);
     }
+
     // 常规的游戏数据监听通道
     connectData() {
         const socket = new WebSocket(Config.WS_URL);
