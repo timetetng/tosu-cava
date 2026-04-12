@@ -1,0 +1,5 @@
+Name: tosu-cava
+Author: Xingjian
+Version: 1.1
+Resolution: 700x100
+authorLinks: https://github.com/timetetng/tosu-cava

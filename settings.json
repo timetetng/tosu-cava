@@ -1,0 +1,86 @@
+[
+  {
+    "uniqueID": "alignment",
+    "type": "options",
+    "title": "Alignment / 对齐方式",
+    "description": "频谱柱的垂直对齐方式",
+    "options": [
+      "Bottom",
+      "Top",
+      "Center"
+    ],
+    "value": "Bottom"
+  },
+  {
+    "uniqueID": "opacity",
+    "type": "number",
+    "title": "Global Opacity / 透明度",
+    "description": "频谱的全局透明度 (百分比 0-100)",
+    "options": [],
+    "value": 100
+  },
+  {
+    "uniqueID": "showInMenu",
+    "type": "checkbox",
+    "title": "Show Outside Gameplay / 游戏外可见",
+    "description": "在选歌界面、主菜单和结算界面也显示频谱",
+    "options": [],
+    "value": true
+  },
+  {
+    "uniqueID": "useFixedColor",
+    "type": "checkbox",
+    "title": "Use Fixed Color / 使用固定颜色",
+    "description": "开启后不再从背景图提取颜色，只使用下方的固定颜色",
+    "options": [],
+    "value": false
+  },
+  {
+    "uniqueID": "fixedColor",
+    "type": "color",
+    "title": "Fixed Color / 固定颜色",
+    "description": "当开启使用固定颜色时生效的颜色",
+    "options": [],
+    "value": "#4db8ff"
+  },
+  {
+    "uniqueID": "numBars",
+    "type": "number",
+    "title": "Number of Bars / 频谱条数量",
+    "description": "频谱柱的数量",
+    "options": [],
+    "value": 30
+  },
+  {
+    "uniqueID": "sensitivity",
+    "type": "number",
+    "title": "Sensitivity / 灵敏度",
+    "description": "全局灵敏度乘数 (调整振幅大小)",
+    "options": [],
+    "value": 1.2
+  },
+  {
+    "uniqueID": "exponent",
+    "type": "number",
+    "title": "Exponent / 动态张力系数",
+    "description": "增强律动感，值越大对高频反应越剧烈",
+    "options": [],
+    "value": 3.0
+  },
+  {
+    "uniqueID": "gravity",
+    "type": "number",
+    "title": "Gravity / 物理重力",
+    "description": "频谱柱的下落速度",
+    "options": [],
+    "value": 0.07
+  },
+  {
+    "uniqueID": "noiseGate",
+    "type": "number",
+    "title": "Noise Gate / 静音门限",
+    "description": "低于此值的微弱振幅会被过滤忽略",
+    "options": [],
+    "value": 0.02
+  }
+]
