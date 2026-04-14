@@ -1,6 +1,9 @@
 # Tosu Cava
 
-Tosu-Cava is an osu! audio visualization plugin based on Tosu. It displays a modern, CAVA-style spectrum within the game and can be overlaid directly onto the gameplay or imported as an OSB browser source.
+Tosu-Cava is an osu! audio visualization plugin based on [tosu](https://tosu.app).
+
+It displays a modern, CAVA-style spectrum within the game and can be overlaid directly onto the gameplay or imported as an OSB browser source.
+
 ![demo](./demo.gif)
 # Install
 
